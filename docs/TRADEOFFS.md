@@ -1,5 +1,7 @@
 # Trade-offs
 
-Direct SDK calls make the one-embedding/one-retrieval/one-generation path transparent, at the cost of not gaining a framework's chain abstractions. Seeded articles make a dependable demo quickly, but are not a document-upload pipeline. One Next.js app avoids backend deployment complexity but couples UI/API release cadence.
+Direct Gemini and Supabase SDK calls keep the RAG path explicit—one embedding, one retrieval RPC, one generation—rather than hiding it behind a framework. The cost is writing small helpers ourselves. A single Next.js application simplifies delivery but couples API/UI deployment.
 
-Exact pgvector search is reasonable for 12 records. At large volume, investigate HNSW/IVFFlat, chunking, metadata filters, evaluation, and caching. Authentication, streaming, and caching are deferred deliberately. Each request pays both embedding and generation latency/cost; caching repeated embeddings, trimming context, batching ingestion, and streaming output are potential later optimizations.
+Seeded articles make a controlled demo without building upload/processing infrastructure, but they are not a production ingestion pipeline. Exact pgvector search is right for 12 documents; HNSW/IVFFlat, filters, chunking, and evaluation matter at larger scale. Authentication, caching, streaming, and queues are intentionally deferred.
+
+Generation retry is deliberately narrow: up to two retries may recover temporary provider overload, but adds up to three seconds and must not hide invalid configuration, permission, or ordinary client errors. Every request pays embedding plus generation cost/latency; context trimming, caching, and batching are later optimizations to validate with measurements.

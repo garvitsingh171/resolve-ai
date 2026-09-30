@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerEnvironment } from "@/lib/env";
 import { getGeminiClient } from "@/lib/gemini";
+import { isTransientGeminiError, withGeminiGenerationRetry } from "@/lib/gemini-retry";
 import { retrieveRelevantDocuments } from "@/lib/retrieval";
 import { resolutionSchema, resolveRequestSchema } from "@/lib/schemas";
 
@@ -29,11 +30,21 @@ export async function POST(request: Request) {
   try {
     const sources = await retrieveRelevantDocuments(parsedRequest.data.issue);
     const context = sources.map((source, index) => `Document ${index + 1}: ${source.title}\nCategory: ${source.category}\nContent: ${source.content}`).join("\n\n---\n\n");
-    const response = await getGeminiClient().models.generateContent({
-      model: getServerEnvironment().GEMINI_MODEL,
-      contents: buildPrompt(parsedRequest.data.issue, context),
-      config: { responseMimeType: "application/json", responseJsonSchema },
-    });
+    let response;
+    try {
+      response = await withGeminiGenerationRetry(() => getGeminiClient().models.generateContent({
+        model: getServerEnvironment().GEMINI_MODEL,
+        contents: buildPrompt(parsedRequest.data.issue, context),
+        config: { responseMimeType: "application/json", responseJsonSchema },
+      }));
+    } catch (error) {
+      if (isTransientGeminiError(error)) {
+        console.error("ResolveAI Gemini generation temporarily unavailable:", error instanceof Error ? error.message : "Unknown error");
+        return NextResponse.json({ error: "AI service is temporarily unavailable. Please try again." }, { status: 503 });
+      }
+      throw error;
+    }
+
     const modelText = response.text;
     if (!modelText) throw new Error("Gemini returned an empty resolution.");
     const resolution = resolutionSchema.parse(JSON.parse(modelText));

@@ -1,15 +1,16 @@
 # Low-Level Design
 
-| Module | Purpose, inputs, outputs, errors |
+| Module | Actual responsibility |
 |---|---|
-| `lib/env.ts` | Lazily validates five required server variables with Zod; throws clear server-only configuration errors. |
-| `lib/gemini.ts` | Reuses one `GoogleGenAI` client initialized with the server API key. |
-| `lib/embeddings.ts` | `generateEmbedding(text, taskType, title?)` requests a 768-dimensional vector and rejects missing/wrong-sized embeddings. |
-| `lib/supabase-server.ts` | Reuses a privileged server Supabase client with session persistence disabled. |
-| `lib/retrieval.ts` | Embeds a query once, calls `match_documents`, and returns database similarity values. |
-| `lib/schemas.ts` | Validates the issue and generated resolution shape. |
-| `app/api/resolve/route.ts` | Coordinates validation, retrieval, context construction, JSON-constrained generation, output parsing, and HTTP responses. |
-| `scripts/seed.ts` | Loads `.env.local`, removes only known demo titles, embeds each source with `RETRIEVAL_DOCUMENT`, and inserts it. |
+| `lib/env.ts` | Lazily Zod-validates required server variables. |
+| `lib/gemini.ts` | Reuses one `GoogleGenAI` client. |
+| `lib/embeddings.ts` | Creates and validates 768-dimensional query/document embeddings. |
+| `lib/gemini-retry.ts` | Retries only transient Gemini generation errors twice, with 1s/2s delay. |
+| `lib/supabase-server.ts` | Reuses the privileged server Supabase client with no session persistence. |
+| `lib/retrieval.ts` | Creates one query vector and calls `match_documents` with `0.55`, `4`. |
+| `lib/schemas.ts` | Validates input and generated resolution fields. |
+| `app/api/resolve/route.ts` | Coordinates RAG, response mapping, and safe HTTP errors. |
+| `scripts/seed.ts` | Loads environment, replaces known demo titles, and embeds/inserts 12 records. |
 
 ```mermaid
 sequenceDiagram
@@ -22,10 +23,14 @@ sequenceDiagram
   R->>G: RETRIEVAL_QUERY embedding
   R->>D: match_documents(vector, .55, 4)
   D-->>R: documents + similarity
-  R->>G: constrained JSON with delimited context
-  G-->>R: resolution JSON
-  R->>R: Zod parse
+  R->>G: generation with delimited context
+  alt transient generation capacity error
+    R->>G: retry after 1s, then 2s
+    R-->>C: 503 if still unavailable
+  end
+  G-->>R: JSON resolution
+  R->>R: Zod parse and map retrieved sources
   R-->>C: resolution + sources
 ```
 
-The separate source mapping prevents the LLM from inventing citations. Each function is intentionally small so input, retrieval, and generation failures surface at the route boundary.
+Retries do not wrap request parsing, embedding, retrieval, output parsing, authentication, permission, or normal permanent 4xx failures. Sources are mapped from retrieval to stop the model from inventing citations.

@@ -1,60 +1,120 @@
 # ResolveAI
 
-AI-powered issue resolution grounded in a Supabase knowledge base.
+AI-powered issue resolution grounded in retrieved support knowledge.
 
-**Live demo:** add deployment URL · **Screenshot:** add after deployment.
+[Live demo](https://resolve-hiz6sanmm-garvit-singhs-projects-91afeb25.vercel.app)
 
-## What it does
+## The problem
 
-A user submits a support issue. The server embeds it with Gemini, searches `public.documents` through the `match_documents` pgvector RPC, gives the top matching documents to Gemini, validates a structured resolution, and returns the actual retrieved sources alongside it.
+Traditional LLM support assistants can answer without company-specific procedures. ResolveAI retrieves relevant support knowledge first, then gives that context to Gemini to produce a structured, source-visible resolution.
+
+## Core features
+
+- Gemini query embeddings with 768-dimensional semantic vectors
+- PostgreSQL + pgvector top-K semantic retrieval (top 4, threshold 0.55)
+- Retrieval-augmented Gemini generation with structured, Zod-validated output
+- Actual vector-search source attribution and escalation when knowledge is insufficient
+- Server-only Gemini and Supabase credentials
+- Transient Gemini-generation retry (up to two retries with 1s/2s backoff)
+- Responsive Next.js interface with accessible loading and error states
+
+## Architecture
 
 ```mermaid
-flowchart LR
-  U[Browser] --> A[Next.js /api/resolve]
-  A --> E[Gemini embedding<br/>768 dimensions]
-  E --> V[Supabase PostgreSQL + pgvector]
-  V --> A
-  A --> G[Gemini generation]
-  G --> U
+flowchart TD
+  U[User] --> UI[Next.js UI]
+  UI --> API[POST /api/resolve]
+  API --> E[Gemini query embedding]
+  E --> V[768-dimensional query vector]
+  V --> DB[(Supabase PostgreSQL + pgvector)]
+  DB --> R[Top relevant documents]
+  R --> C[Context augmentation]
+  C --> G[Gemini generation]
+  G --> Z[Zod validation]
+  Z --> O[Resolution + actual sources]
 ```
 
-## Stack and features
+### Why this is RAG, not a chatbot wrapper
 
-- Next.js App Router, React, TypeScript, Tailwind CSS
-- Route Handler with Zod request and model-output validation
-- Gemini via `@google/genai`; one embedding and one generation per request
-- Supabase PostgreSQL, pgvector, and real similarity scores from `match_documents`
-- 12 curated support documents and an idempotent seed script
-- Source attribution, low-retrieval escalation guidance, responsive accessible UI
+The issue is embedded, and pgvector retrieves semantically related support documents. Those documents are delimited and added to Gemini’s prompt before generation. Source metadata comes directly from vector retrieval, not the model. This reduces unsupported generation and makes the answer inspectable; it does not eliminate hallucinations.
+
+## Technology
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| Frontend | Next.js, React, TypeScript, Tailwind CSS | Responsive issue-resolution interface |
+| Backend | Next.js Route Handlers | Server API and trust boundary |
+| LLM | Gemini via `@google/genai` | Structured resolution generation |
+| Embeddings | Gemini Embedding API | Semantic representation of issues and documents |
+| Database | Supabase PostgreSQL | Knowledge document storage |
+| Vector search | pgvector | Cosine-similarity retrieval |
+| Validation | Zod | Request and generated-output validation |
+| Deployment | Vercel | Application hosting |
 
 ## Local setup
 
-```bash
-npm install
-npm run seed
-npm run dev
+1. Clone this repository and install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+2. Create `.env.local`:
+
+   ```bash
+   GEMINI_API_KEY=
+   GEMINI_MODEL=
+   GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+   SUPABASE_URL=
+   SUPABASE_SECRET_KEY=
+   ```
+
+   `GEMINI_MODEL` controls the configured generation model. Keep all values server-side; never prefix these variables with `NEXT_PUBLIC_`.
+
+3. In the Supabase SQL Editor, run [supabase/schema.sql](supabase/schema.sql).
+
+4. Seed the 12-document demo knowledge base:
+
+   ```bash
+   npm run seed
+   ```
+
+5. Start the app and open [http://localhost:3000](http://localhost:3000):
+
+   ```bash
+   npm run dev
+   ```
+
+## Sample inputs
+
+- “My payment failed but money was deducted.”
+- “I reset my password but I still cannot log in.”
+- “My API token returns 401 Unauthorized.”
+
+## Project structure
+
+```text
+app/         Next.js UI and /api/resolve route
+components/  Interactive workspace and result presentation
+lib/         Environment, Gemini, embedding, retry, retrieval, and validation logic
+data/        Curated support knowledge documents
+scripts/     Database seed script
+supabase/    Reproducible pgvector schema and RPC
+docs/        Engineering and interview documentation
 ```
 
-Create `.env.local` with variable names only:
+## Limitations
 
-```bash
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-3.8-flash
-GEMINI_EMBEDDING_MODEL=gemini-embedding-001
-SUPABASE_URL=
-SUPABASE_SECRET_KEY=
-```
+- Seeded knowledge documents; no ingestion or chunking pipeline
+- Small dataset, fixed 0.55 threshold, and no retrieval evaluation benchmark yet
+- No authentication, authorization, or tenant-scoped knowledge bases
+- External Gemini availability affects requests; only transient generation failures are retried
+- Exact search is sufficient for 12 documents; no ANN index is needed yet
 
-The database must provide `public.documents` with `embedding vector(768)` and the `public.match_documents(query_embedding vector(768), match_threshold double precision, match_count integer)` RPC described in the project brief. `npm run seed` removes only these demo documents by title, regenerates document embeddings, and inserts them. Do not expose `.env.local`, the Supabase secret key, or the Gemini key.
+## Future improvements
 
-## API
+Document ingestion and chunking, retrieval evaluation, reranking, tenant isolation, authentication, HNSW/IVFFlat indexing at scale, observability, rate limiting, feedback capture, and justified caching.
 
-`POST /api/resolve` with `{ "issue": "My API token returns 401 Unauthorized." }`. It returns a Zod-validated resolution plus source `id`, `title`, `category`, and real vector `similarity`.
+## Engineering documentation
 
-## Verification
-
-`npm run lint` and `npm run build` passed locally. After seeding, try the payment-deducted, password-reset, API-401, subscription-cancellation, and unrelated-question cases listed in [Testing Strategy](docs/TESTING_STRATEGY.md).
-
-## Engineering notes
-
-This is a deliberately small portfolio MVP, not a production support platform. See [PRD](docs/PRD.md), [HLD](docs/HLD.md), [LLD](docs/LLD.md), [Architecture](docs/ARCHITECTURE.md), [ADRs](docs/ARCHITECTURE_DECISIONS.md), [RAG pipeline](docs/RAG_PIPELINE.md), [database](docs/DATABASE_DESIGN.md), [security](docs/SECURITY.md), [testing](docs/TESTING_STRATEGY.md), [trade-offs](docs/TRADEOFFS.md), and the [interview guide](docs/INTERVIEW_GUIDE.md).
+[PRD](docs/PRD.md) · [HLD](docs/HLD.md) · [LLD](docs/LLD.md) · [Architecture](docs/ARCHITECTURE.md) · [Architecture Decisions](docs/ARCHITECTURE_DECISIONS.md) · [RAG Pipeline](docs/RAG_PIPELINE.md) · [Database Design](docs/DATABASE_DESIGN.md) · [API Documentation](docs/API_DOCUMENTATION.md) · [Security](docs/SECURITY.md) · [Testing Strategy](docs/TESTING_STRATEGY.md) · [Trade-offs](docs/TRADEOFFS.md) · [Interview Guide](docs/INTERVIEW_GUIDE.md)

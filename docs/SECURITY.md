@@ -1,7 +1,7 @@
 # Security
 
-`GEMINI_API_KEY` and `SUPABASE_SECRET_KEY` are read only inside server modules and must never use a `NEXT_PUBLIC_` prefix. `.env.local` remains ignored. The client sends an issue to a same-origin route and receives only a resolution plus retrieval metadata.
+`GEMINI_API_KEY` and `SUPABASE_SECRET_KEY` are read only by server modules and must never receive a `NEXT_PUBLIC_` prefix. `.env*` and `.vercel` are ignored. Browser code calls the same-origin API and receives only a resolution plus retrieval metadata.
 
-Zod limits and trims input. The generation prompt treats user input as untrusted and separates it from knowledge context; this reduces but cannot eliminate prompt injection. Retrieved docs are also treated as reference material, so a poisoned knowledge base remains a risk. Generated JSON is parsed with Zod before use. Server logs record only safe error messages, not keys or raw secrets.
+Zod trims and limits user input. The prompt treats user text as untrusted and labels knowledge context as reference material rather than instructions. This reduces but cannot eliminate prompt injection; a poisoned or stale knowledge base remains a risk. Generated JSON is Zod-validated before rendering. Server logs retain safe error messages only—no keys or raw third-party payloads.
 
-Production improvements: authentication and tenant-scoped retrieval, rate limiting, audit logs with redaction, content moderation, document review/versioning, least-privilege DB credentials, secret rotation, CSP, monitoring, and an incident process for a leaked service key. This MVP is not presented as perfectly secure.
+Production improvements: auth and tenant-scoped retrieval, rate limits, audit logs with redaction, document review/versioning, least-privilege DB roles, secret rotation, CSP, monitoring, and incident response. This MVP is not perfectly secure or ready for unauthenticated public traffic without those controls.

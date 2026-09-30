@@ -1,19 +1,22 @@
 # Architecture Decisions
 
 ## ADR-001 — Next.js full-stack application
-**Context:** one small UI/API product. **Decision:** use App Router and a Route Handler. **Alternatives:** separate API service. **Why:** fewer deployments and a clear server boundary. **Trade-off:** API and UI scale together initially.
+**Context:** one focused UI/API product. **Decision:** App Router and Route Handler. **Alternative:** separate backend. **Why:** clear server boundary with fewer deployments. **Trade-off:** UI/API release together initially.
 
 ## ADR-002 — Gemini API, not local models
-**Context:** deadline-conscious MVP. **Decision:** use `@google/genai` for embedding and generation. **Alternatives:** self-hosted models. **Why:** high capability without ML infrastructure. **Trade-off:** API cost, latency, and provider availability.
+**Decision:** use `@google/genai` for embedding and generation. **Why:** managed capability without ML operations. **Trade-off:** API availability, cost, and latency.
 
-## ADR-003 — PostgreSQL + pgvector at 768 dimensions
-**Context:** existing `documents` schema. **Decision:** generate 768-dimensional vectors compatible with `vector(768)`. **Alternatives:** a separate vector DB. **Why:** one data system and real SQL RPC search. **Trade-off:** index tuning is needed as corpus size grows.
+## ADR-003 — Supabase PostgreSQL + pgvector at 768 dimensions
+**Decision:** store `extensions.vector(768)` and query via an RPC. **Why:** one managed data system and real cosine retrieval. **Trade-off:** ANN indexing and tuning come later.
 
 ## ADR-004 — Direct SDKs, not LangChain
-**Decision:** explicitly compose embedding, RPC, and generation. **Why:** no hidden chains, easy interview explanation. **Trade-off:** future orchestration features must be written directly.
+**Decision:** explicitly compose embedding, RPC, and generation. **Why:** the narrow RAG flow is easy to inspect and explain. **Trade-off:** future orchestration stays custom.
 
-## ADR-005 — Sources outside model output
-**Decision:** map source metadata from retrieval, not Gemini. **Why:** prevents invented citations. **Trade-off:** source summaries are not model-authored.
+## ADR-005 — Retrieval-derived sources
+**Decision:** sources are mapped from RPC results, outside model JSON. **Why:** avoids fabricated citations. **Trade-off:** the model does not summarize source metadata.
 
-## ADR-006 — Server-only secrets and no authentication
-**Decision:** use service credentials only in server modules; defer user identity. **Why:** a focused MVP. **Consequence:** do not expose it publicly without rate limiting and authorization.
+## ADR-006 — Server-only secrets; no user identity in MVP
+**Decision:** use server environment variables and defer authentication. **Why:** focused scope. **Trade-off:** a public production deployment needs authorization and rate limiting.
+
+## ADR-007 — Bounded retry for transient generation failures
+**Decision:** retry generation only twice after 1s and 2s for 429/503/capacity signals; return `503` when exhausted. **Why:** temporary overload can recover without masking permanent errors. **Trade-off:** an affected request waits up to three seconds longer.
